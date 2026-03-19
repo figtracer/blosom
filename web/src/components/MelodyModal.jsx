@@ -314,7 +314,7 @@ export function MelodyModal({ blob, block, onClose }) {
             <div className="blob-info-grid">
               <div className="info-cell">
                 <span className="info-label">Blob</span>
-                <span className="info-value mono">{blob.blob_hash.slice(0, 10)}...{blob.blob_hash.slice(-8)}</span>
+                <a className="info-value mono info-link" href={`https://blobscan.com/blob/${blob.blob_hash}`} target="_blank" rel="noopener">{blob.blob_hash.slice(0, 10)}...{blob.blob_hash.slice(-8)}</a>
               </div>
               <div className="info-cell">
                 <span className="info-label">Block</span>

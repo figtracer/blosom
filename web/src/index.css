@@ -567,6 +567,14 @@ body {
   color: var(--accent-purple);
   text-decoration: underline;
 }
+.info-link {
+  text-decoration: none;
+  color: inherit;
+  transition: color 0.15s;
+}
+.info-link:hover {
+  color: var(--accent-purple);
+}
 
 /* ---- Generate Section ---- */
 .generate-section {
