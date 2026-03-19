@@ -7,7 +7,10 @@ import { getDb, getExExDb, isExExMode } from './db'
 import { seedMockData } from './mock-data'
 
 const app = new Hono()
-app.use('*', cors())
+app.use('*', cors({
+  origin: '*',
+  exposeHeaders: ['WWW-Authenticate', 'Payment-Receipt', 'Authorization'],
+}))
 
 const mppx = Mppx.create({
   methods: [
@@ -22,7 +25,7 @@ const mppx = Mppx.create({
 const keyManager = Handler.keyManager({
   kv: Kv.memory(),
   path: '/keys',
-  rp: 'localhost',
+  rp: process.env.RP_ID || 'localhost',
 })
 
 // Route all /keys/* requests to the tempo.ts key manager handler
@@ -41,6 +44,8 @@ if (!isExExMode()) {
 
 // --- FREE ENDPOINTS ---
 
+const PAGE_SIZE = 25
+
 app.get('/api/blocks', (c) => {
   if (isExExMode()) {
     return handleBlocksExEx(c)
@@ -49,7 +54,11 @@ app.get('/api/blocks', (c) => {
 })
 
 function handleBlocksLocal(c: any) {
+  const page = parseInt(c.req.query('page') || '1')
+  const offset = (page - 1) * PAGE_SIZE
   const db = getDb()
+
+  const { count } = db.prepare('SELECT COUNT(*) as count FROM blocks').get() as any
   const blocks = db.prepare(`
     SELECT b.*, json_group_array(json_object(
       'blob_hash', bl.blob_hash,
@@ -63,8 +72,8 @@ function handleBlocksLocal(c: any) {
     LEFT JOIN melodies m ON bl.blob_hash = m.blob_hash
     GROUP BY b.block_number
     ORDER BY b.block_number DESC
-    LIMIT 50
-  `).all()
+    LIMIT ? OFFSET ?
+  `).all(PAGE_SIZE, offset)
 
   const parsed = blocks.map((b: any) => ({
     ...b,
@@ -73,23 +82,25 @@ function handleBlocksLocal(c: any) {
       .map((bl: any) => ({ ...bl, has_melody: !!bl.has_melody })),
   }))
 
-  return c.json(parsed)
+  return c.json({ blocks: parsed, page, totalPages: Math.ceil(count / PAGE_SIZE), total: count })
 }
 
 function handleBlocksExEx(c: any) {
+  const page = parseInt(c.req.query('page') || '1')
+  const offset = (page - 1) * PAGE_SIZE
   const exex = getExExDb()
   const localDb = getDb()
 
-  // Fetch blocks from blob-exex
+  const { count } = exex.prepare('SELECT COUNT(*) as count FROM blocks').get() as any
+
   const blocks = exex.prepare(`
     SELECT b.block_number, b.block_timestamp, b.total_blobs as blob_count,
            b.gas_price as blob_gas_price, b.excess_blob_gas
     FROM blocks b
     ORDER BY b.block_number DESC
-    LIMIT 50
-  `).all() as any[]
+    LIMIT ? OFFSET ?
+  `).all(PAGE_SIZE, offset) as any[]
 
-  // Fetch blobs for each block from blob-exex
   const blobStmt = exex.prepare(`
     SELECT bh.blob_hash, bh.blob_index, bt.tx_hash, bt.sender, bt.block_number
     FROM blob_hashes bh
@@ -98,7 +109,6 @@ function handleBlocksExEx(c: any) {
     ORDER BY bh.blob_index
   `)
 
-  // Check melody existence from local DB
   const melodyStmt = localDb.prepare(`SELECT 1 FROM melodies WHERE blob_hash = ?`)
 
   const parsed = blocks.map((block: any) => {
@@ -113,7 +123,7 @@ function handleBlocksExEx(c: any) {
     return { ...block, blobs }
   })
 
-  return c.json(parsed)
+  return c.json({ blocks: parsed, page, totalPages: Math.ceil(count / PAGE_SIZE), total: count })
 }
 
 app.get('/api/melodies', (c) => {
@@ -140,44 +150,48 @@ app.get('/api/melody/:blobHash', (c) => {
 // --- MPP-GATED ENDPOINT ---
 
 app.post('/api/melody', async (c) => {
-  const response = await mppx.charge({ amount: '0.03' })(c.req.raw)
-  if (response.status === 402) return response.challenge
-
+  // Parse body first to check for existing melody before charging
   const body = await c.req.json()
   const { blob_hash } = body
 
   if (!blob_hash || typeof blob_hash !== 'string') {
-    return response.withReceipt(
-      Response.json({ error: 'blob_hash required' }, { status: 400 })
-    )
+    return c.json({ error: 'blob_hash required' }, 400)
   }
 
+  const frontendUrl = process.env.FRONTEND_URL || 'https://blossom.figtracer.com'
   const db = getDb()
 
+  // Check if melody already exists — return it for free
   const existing = db.prepare(`SELECT * FROM melodies WHERE blob_hash = ?`).get(blob_hash)
   if (existing) {
-    return response.withReceipt(
-      Response.json({
-        already_exists: true,
-        ...(existing as any),
-        notes: JSON.parse((existing as any).notes_json),
-      })
-    )
+    return c.json({
+      already_exists: true,
+      ...(existing as any),
+      notes: JSON.parse((existing as any).notes_json),
+      url: `${frontendUrl}/#blob/${blob_hash}`,
+    })
   }
+
+  // Only charge if we need to generate a new melody
+  const response = await mppx.charge({ amount: '0.03' })(c.req.raw)
+  if (response.status === 402) return response.challenge
 
   const melody = generateMelody(blob_hash)
   const payerAddress = response.receipt?.source || 'unknown'
+  const txHash = response.receipt?.txHash || response.receipt?.hash || ''
 
   db.prepare(`
-    INSERT INTO melodies (blob_hash, notes_json, bpm, scale, payer_address)
-    VALUES (?, ?, ?, ?, ?)
-  `).run(blob_hash, JSON.stringify(melody.notes), melody.bpm, melody.scale, payerAddress)
+    INSERT INTO melodies (blob_hash, notes_json, bpm, scale, payer_address, tx_hash)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `).run(blob_hash, JSON.stringify(melody.notes), melody.bpm, melody.scale, payerAddress, txHash)
 
   return response.withReceipt(
     Response.json({
       blob_hash,
       ...melody,
       payer_address: payerAddress,
+      tx_hash: txHash,
+      url: `${frontendUrl}/#blob/${blob_hash}`,
     })
   )
 })
