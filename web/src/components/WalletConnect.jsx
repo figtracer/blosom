@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useAccount, useConnect, useConnectors, useDisconnect } from 'wagmi'
 import { initMppx } from '../lib/mppx-client'
 
@@ -7,12 +7,22 @@ export function WalletConnect() {
   const connect = useConnect()
   const connectors = useConnectors()
   const { disconnect } = useDisconnect()
+  const [floats, setFloats] = useState([])
 
   useEffect(() => {
     if (isConnected) {
       initMppx()
     }
   }, [isConnected])
+
+  const copyAddress = useCallback((e) => {
+    if (!address) return
+    navigator.clipboard.writeText(address)
+    const id = Date.now()
+    const rect = e.currentTarget.getBoundingClientRect()
+    setFloats(prev => [...prev, { id, x: e.clientX - rect.left, y: -10 }])
+    setTimeout(() => setFloats(prev => prev.filter(f => f.id !== id)), 1200)
+  }, [address])
 
   if (connect.isPending) {
     return <div className="wallet-connect"><span className="wallet-pending">Check biometric prompt...</span></div>
@@ -22,8 +32,11 @@ export function WalletConnect() {
     return (
       <div className="wallet-connected">
         <span className="wallet-dot" />
-        <span className="wallet-address">
+        <span className="wallet-address" onClick={copyAddress} style={{ cursor: 'pointer', position: 'relative' }}>
           {address?.slice(0, 6)}...{address?.slice(-4)}
+          {floats.map(f => (
+            <span key={f.id} className="copy-float" style={{ left: f.x }}>copied!</span>
+          ))}
         </span>
         <button className="disconnect-btn" onClick={() => disconnect()}>
           Sign out

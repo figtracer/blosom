@@ -166,6 +166,20 @@ body {
 }
 .disconnect-btn:hover { color: var(--text-primary); }
 .wallet-pending { color: var(--text-tertiary); font-size: 12px; }
+.copy-float {
+  position: absolute;
+  top: -8px;
+  font-size: 10px;
+  color: var(--accent-purple);
+  font-family: var(--font-mono);
+  pointer-events: none;
+  animation: float-up 1.2s ease-out forwards;
+  white-space: nowrap;
+}
+@keyframes float-up {
+  0% { opacity: 1; transform: translateY(0); }
+  100% { opacity: 0; transform: translateY(-24px); }
+}
 .wallet-error-toast {
   position: absolute;
   top: calc(100% + 8px);

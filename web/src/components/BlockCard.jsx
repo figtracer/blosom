@@ -33,7 +33,7 @@ function relativeTime(timestamp) {
 
 export function BlockCard({ block, onBlobClick, isNew }) {
   const blobs = block.blobs || []
-  const melodyCount = blobs.filter(b => b.has_melody).length
+  const melodyCount = new Set(blobs.filter(b => b.has_melody).map(b => b.blob_hash)).size
   const palette = PALETTES[block.block_number % PALETTES.length]
 
   return (

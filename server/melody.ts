@@ -17,6 +17,12 @@ const SCALES: Record<string, number[]> = {
   'A minor pentatonic':  [0, 3, 5, 7, 10],
   'D major pentatonic':  [2, 4, 6, 9, 11],
   'E minor pentatonic':  [4, 7, 9, 11, 14],
+  'G major pentatonic':  [7, 9, 11, 2, 4],
+  'B minor pentatonic':  [11, 2, 4, 7, 9],
+  'F major pentatonic':  [5, 7, 9, 0, 2],
+  'C minor pentatonic':  [0, 3, 5, 7, 10],
+  'Bb major pentatonic': [10, 0, 2, 5, 7],
+  'D minor pentatonic':  [2, 5, 7, 9, 0],
 }
 const SCALE_NAMES = Object.keys(SCALES)
 
@@ -36,7 +42,7 @@ function hexToBytes(hex: string): Uint8Array {
 export function generateMelody(blobHash: string): Melody {
   const bytes = hexToBytes(blobHash)
 
-  const scaleIdx = bytes[28] % SCALE_NAMES.length
+  const scaleIdx = (bytes[3] + bytes[7] * 17) % SCALE_NAMES.length
   const scaleName = SCALE_NAMES[scaleIdx]
   const scale = SCALES[scaleName]
 
