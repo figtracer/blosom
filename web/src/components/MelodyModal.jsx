@@ -318,7 +318,7 @@ export function MelodyModal({ blob, block, onClose }) {
               </div>
               <div className="info-cell">
                 <span className="info-label">Block</span>
-                <span className="info-value">#{block.block_number.toLocaleString()}</span>
+                <span className="info-value">{block.block_number ? `#${block.block_number.toLocaleString()}` : '—'}</span>
               </div>
               <div className="info-cell">
                 <span className="info-label">Sender</span>

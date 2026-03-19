@@ -34,6 +34,30 @@ function App() {
 
   useEffect(() => { fetchBlocks(page) }, [page, fetchBlocks])
 
+  // Deep link: open modal from hash like #blob/0xabc...
+  useEffect(() => {
+    const hash = window.location.hash
+    if (!hash.startsWith('#blob/')) return
+    const blobHash = hash.slice(6)
+    if (!blobHash) return
+
+    // Find the blob in loaded blocks
+    for (const block of blocks) {
+      const blob = (block.blobs || []).find(b => b.blob_hash === blobHash)
+      if (blob) {
+        setSelectedBlob(blob)
+        setSelectedBlock(block)
+        return
+      }
+    }
+
+    // Blob not in current page — open modal with minimal info
+    if (!selectedBlob && blocks.length > 0) {
+      setSelectedBlob({ blob_hash: blobHash, sender: 'unknown' })
+      setSelectedBlock({ block_number: 0 })
+    }
+  }, [blocks])
+
   // SSE for live updates (only on page 1)
   useEffect(() => {
     if (page !== 1) return
@@ -93,7 +117,7 @@ function App() {
             key={selectedBlob.blob_hash}
             blob={selectedBlob}
             block={selectedBlock}
-            onClose={() => { stopMelody(); setSelectedBlob(null); setSelectedBlock(null) }}
+            onClose={() => { stopMelody(); setSelectedBlob(null); setSelectedBlock(null); history.replaceState(null, '', ' ') }}
           />
         )}
       </AnimatePresence>
