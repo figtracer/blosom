@@ -1,5 +1,19 @@
 import { BlobSquare } from './BlobSquare'
 
+// color palettes that rotate per block
+const PALETTES = [
+  { hue: 0, sat: 65, lum: 62 },     // warm red
+  { hue: 30, sat: 70, lum: 60 },    // orange
+  { hue: 50, sat: 65, lum: 58 },    // yellow/gold
+  { hue: 140, sat: 45, lum: 55 },   // green
+  { hue: 180, sat: 45, lum: 55 },   // teal
+  { hue: 220, sat: 55, lum: 60 },   // blue
+  { hue: 260, sat: 55, lum: 62 },   // purple
+  { hue: 290, sat: 50, lum: 60 },   // magenta
+  { hue: 330, sat: 55, lum: 60 },   // pink
+  { hue: 15, sat: 60, lum: 55 },    // rust
+]
+
 function relativeTime(timestamp) {
   if (!timestamp) return ''
   const now = Date.now()
@@ -20,17 +34,16 @@ function relativeTime(timestamp) {
 export function BlockCard({ block, onBlobClick, isNew }) {
   const blobs = block.blobs || []
   const melodyCount = blobs.filter(b => b.has_melody).length
+  const palette = PALETTES[block.block_number % PALETTES.length]
 
   return (
     <div className={`block-card ${isNew ? 'block-card-new' : ''}`}>
       <div className="block-header">
-        <div className="block-header-left">
-          <span className="block-number">#{block.block_number.toLocaleString()}</span>
+        <span className="block-number">#{block.block_number.toLocaleString()}</span>
+        <div className="block-header-right">
           {block.block_timestamp && (
             <span className="block-timestamp">{relativeTime(block.block_timestamp)}</span>
           )}
-        </div>
-        <div className="block-header-right">
           {melodyCount > 0 && (
             <span className="block-melody-badge">
               <svg width="10" height="10" viewBox="0 0 16 16" fill="currentColor">
@@ -39,7 +52,7 @@ export function BlockCard({ block, onBlobClick, isNew }) {
               {melodyCount}
             </span>
           )}
-          <span className="blob-count">{blobs.length} blob{blobs.length !== 1 ? 's' : ''}</span>
+          <span className="blob-count">{blobs.length}</span>
         </div>
       </div>
       <div className="blob-grid">
@@ -50,6 +63,7 @@ export function BlockCard({ block, onBlobClick, isNew }) {
             blockNumber={block.block_number}
             hasMelody={blob.has_melody}
             onClick={() => onBlobClick(blob, block)}
+            palette={palette}
           />
         ))}
       </div>
