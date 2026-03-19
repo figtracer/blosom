@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { motion } from 'framer-motion'
+import { useAccount } from 'wagmi'
 import { playMelody, stopMelody } from '../lib/audio'
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:3001'
@@ -25,14 +26,28 @@ function makePitchMapper(notes) {
   }
 }
 
-function getBlobColor(blobHash) {
+const PALETTES = [
+  { hue: 0, sat: 65, lum: 62 },
+  { hue: 30, sat: 70, lum: 60 },
+  { hue: 50, sat: 65, lum: 58 },
+  { hue: 140, sat: 45, lum: 55 },
+  { hue: 180, sat: 45, lum: 55 },
+  { hue: 220, sat: 55, lum: 60 },
+  { hue: 260, sat: 55, lum: 62 },
+  { hue: 290, sat: 50, lum: 60 },
+  { hue: 330, sat: 55, lum: 60 },
+  { hue: 15, sat: 60, lum: 55 },
+]
+
+function getBlobColor(blobHash, blockNumber) {
+  const palette = PALETTES[(blockNumber || 0) % PALETTES.length]
   const hash = blobHash.slice(2)
   const r = parseInt(hash.slice(0, 2), 16)
   const g = parseInt(hash.slice(2, 4), 16)
-  const b = parseInt(hash.slice(4, 6), 16)
-  const hue = 220 + (r % 60)
-  const sat = 50 + (g % 30)
-  const lum = 55 + (b % 15)
+  const hueOffset = (r + g) % 30 - 15
+  const hue = palette.hue + hueOffset
+  const sat = palette.sat + (g % 15) - 7
+  const lum = palette.lum + (parseInt(hash.slice(4, 6), 16) % 12) - 6
   return { hue, sat, lum, css: `hsl(${hue}, ${sat}%, ${lum}%)` }
 }
 
@@ -187,11 +202,13 @@ export function MelodyModal({ blob, block, onClose }) {
   const [playing, setPlaying] = useState(false)
   const [activeNoteIndex, setActiveNoteIndex] = useState(-1)
   const [playbackProgress, setPlaybackProgress] = useState(0)
+  const [copied, setCopied] = useState(false)
   const [error, setError] = useState(null)
   const playStartRef = useRef(null)
   const rafRef = useRef(null)
+  const { isConnected } = useAccount()
 
-  const blobColor = getBlobColor(blob.blob_hash)
+  const blobColor = getBlobColor(blob.blob_hash, block.block_number)
   const mapPitch = useMemo(() => makePitchMapper(melody?.notes), [melody])
 
   useEffect(() => {
@@ -238,6 +255,18 @@ export function MelodyModal({ blob, block, onClose }) {
     if (rafRef.current) cancelAnimationFrame(rafRef.current)
   }, [])
 
+  // Poll for melody when none exists (purchased via CLI)
+  useEffect(() => {
+    if (melody) return
+    const interval = setInterval(() => {
+      fetch(`${API}/api/melody/${blob.blob_hash}`)
+        .then(r => r.ok ? r.json() : null)
+        .then(data => { if (data?.exists) setMelody(ensureDuration(data)) })
+        .catch(() => {})
+    }, 3000)
+    return () => clearInterval(interval)
+  }, [blob.blob_hash, melody])
+
   const generate = async () => {
     setLoading(true)
     setError(null)
@@ -281,21 +310,12 @@ export function MelodyModal({ blob, block, onClose }) {
         transition={{ type: 'spring', damping: 28, stiffness: 340 }}
         onClick={e => e.stopPropagation()}
       >
-          <div className="modal-accent-bar" style={{ background: `linear-gradient(90deg, ${blobColor.css}, hsl(${blobColor.hue + 40}, ${blobColor.sat}%, ${blobColor.lum + 10}%))` }} />
-
           <div className="modal-body">
-            <div className="modal-header-row">
-              <div>
-                <code className="modal-hash">{blob.blob_hash}</code>
-              </div>
-              <button className="close-btn" onClick={onClose}>
-                <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-                  <path d="M1 1L13 13M1 13L13 1" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-                </svg>
-              </button>
-            </div>
-
             <div className="blob-info-grid">
+              <div className="info-cell">
+                <span className="info-label">Blob</span>
+                <span className="info-value mono">{blob.blob_hash.slice(0, 10)}...{blob.blob_hash.slice(-8)}</span>
+              </div>
               <div className="info-cell">
                 <span className="info-label">Block</span>
                 <span className="info-value">#{block.block_number.toLocaleString()}</span>
@@ -386,9 +406,16 @@ export function MelodyModal({ blob, block, onClose }) {
                 </div>
 
                 <div className="melody-footer">
-                  <span className="tempo-badge">Paid via Tempo</span>
-                  {melody.payer_address && melody.payer_address !== 'unknown' && (
-                    <span className="payer-info">{melody.payer_address.slice(0, 10)}...</span>
+                  <span className="tempo-badge">Paid via Tempo · $0.03</span>
+                  {melody.tx_hash && (
+                    <a
+                      className="tx-link"
+                      href={`https://explorer.tempo.xyz/tx/${melody.tx_hash}`}
+                      target="_blank"
+                      rel="noopener"
+                    >
+                      tx {melody.tx_hash.slice(0, 8)}...{melody.tx_hash.slice(-4)}
+                    </a>
                   )}
                 </div>
               </div>
@@ -401,21 +428,37 @@ export function MelodyModal({ blob, block, onClose }) {
                         key={i}
                         className="generate-bar"
                         style={{ backgroundColor: blobColor.css }}
-                        animate={{ height: loading ? [8, 24 + Math.random() * 20, 8] : 8 }}
-                        transition={{ duration: 0.8, repeat: loading ? Infinity : 0, delay: i * 0.07 }}
+                        animate={{ height: loading ? [8, 24 + Math.random() * 20, 8] : [8, 14, 8] }}
+                        transition={{ duration: loading ? 0.8 : 2, repeat: Infinity, delay: i * (loading ? 0.07 : 0.12), ease: 'easeInOut' }}
                       />
                     ))}
                   </div>
-                  <p className="generate-prompt">{loading ? 'Generating melody...' : 'No melody yet'}</p>
+                  <p className="generate-prompt">{loading ? 'generating melody...' : 'no melody yet'}</p>
                 </div>
 
-                <button
-                  className="generate-btn"
-                  onClick={generate}
-                  disabled={loading}
+                {isConnected ? (
+                  <button
+                    className="generate-btn"
+                    onClick={generate}
+                    disabled={loading}
+                  >
+                    {loading ? 'Generating...' : 'Generate Melody'}
+                  </button>
+                ) : (
+                  <p className="generate-hint">sign in to generate, or use CLI:</p>
+                )}
+
+                <div
+                  className="cli-command"
+                  onClick={() => {
+                    navigator.clipboard.writeText(`tempo request -X POST --json '{"blob_hash":"${blob.blob_hash}"}' '${API}/api/melody'`)
+                    setCopied(true)
+                    setTimeout(() => setCopied(false), 2000)
+                  }}
                 >
-                  {loading ? 'Generating...' : 'Generate Melody ($0.03)'}
-                </button>
+                  <code>tempo request -X POST --json '{`{"blob_hash":"${blob.blob_hash.slice(0, 12)}..."}`}' /api/melody</code>
+                  <span className="cli-copy">{copied ? 'copied!' : 'copy'}</span>
+                </div>
                 {error && <p className="error">{error}</p>}
               </div>
             )}
